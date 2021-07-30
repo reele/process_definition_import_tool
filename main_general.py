@@ -38,7 +38,7 @@ PROCESS_RELATIONS = {
     'TRIGGER_DDB': ['TRIGGER', 'TRIGGER_{cycle_group}_DW', 'DW_{cycle_group}触发做业组'],
 }
 
-# 作业流数量过多时会导致张勇大量线程，弃用
+# 作业流数量过多时会导致占用大量线程，弃用
 # PROCESS_RELATIONS_ALL_SUB = {
 #     'CVT': ['PROCESS_CSO', 'CSO_{job_name}', '贴源层作业流{job_name}'],
 #     'ODB': ['PROCESS_CSO', 'CSO_{job_name}', '贴源层作业流{job_name}'],

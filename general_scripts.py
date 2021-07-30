@@ -1,3 +1,7 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*- 
+
+# examples
 
 etl_jobs = [
     # ['group','theme','etl_job','description','cycle','day_offset','osprogram','workdir','scriptname','scriptpath','additionparameters','enable'],

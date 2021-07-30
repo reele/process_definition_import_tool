@@ -1,13 +1,15 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
 
 import ds_db
 import json
 from datetime import datetime
-
+import ds_config
 
 DB_INFO = {
-    'project_name': 'dw_schedule_test',
-    'tenant_name': 'dw_etl',
-    'user_name': 'dw_etl'
+    'project_name': ds_config.PROJECT_NAME,
+    'tenant_name': ds_config.TENANT_NAME,
+    'user_name': ds_config.USER_NAME
 }
 
 PROCESS_DEFINITION_ID = [None]
@@ -255,8 +257,10 @@ def dag_node_sort_key(node: DagNode):
     # return node.name
     return (node.count_prev) + (node.count_next)
 
+
 def dag_node_group_sort_key(nodes: dict[str, DagNode]):
     return len(nodes)
+
 
 def clear_connected_nodes(node: DagNode) -> dict[str, DagNode]:
     if node.cleared:
@@ -277,9 +281,9 @@ def clear_connected_nodes(node: DagNode) -> dict[str, DagNode]:
 
 # a---c 跨级
 # a-b-c 通过其它路径仍能搜索到
-def find_redundant_chain(base_node: DagNode, check_node: DagNode) -> list[DagNode]:
-    
 
+
+def find_redundant_chain(base_node: DagNode, check_node: DagNode) -> list[DagNode]:
 
     for next_node in base_node.next.copy():
         if next_node.dag_level + 1 == check_node.dag_level and check_node in next_node.next:
@@ -288,8 +292,9 @@ def find_redundant_chain(base_node: DagNode, check_node: DagNode) -> list[DagNod
         if (result):
             result.insert(0, next_node)
             return result
-    
+
     return None
+
 
 def optimize_chain(base_node: DagNode, task_dict: dict):
     for next_node in base_node.next.copy():
@@ -300,9 +305,10 @@ def optimize_chain(base_node: DagNode, task_dict: dict):
                 task_dict[next_node.name]["preTasks"].remove(base_node.name)
                 base_node.next.remove(next_node)
                 next_node.prev.remove(base_node)
-                print('removed redundant chain [{}]->[{}] by:'.format(base_node.name, next_node.name))
+                print(
+                    'removed redundant chain [{}]->[{}] by:'.format(base_node.name, next_node.name))
                 print('    {}'.format(
-                    '->'.join([ '[{}]'.format(n.name) for n in result])
+                    '->'.join(['[{}]'.format(n.name) for n in result])
                 ))
 
 
@@ -326,17 +332,6 @@ def gen_locations(task_dict: dict) -> dict:
             dag_node.prev.add(pre_node)
             pre_node.next.add(dag_node)
 
-    # nodes: dict[str, DagNode] = {}
-    # for task_node in task_dict.values():
-    #     dag_node = dict_item_create_or_get(
-    #         nodes, task_node["name"], DagNode)
-    #     dag_node.name = task_node["name"]
-    #     for pre_task_name in task_node["preTasks"]:
-    #         pre_node = dict_item_create_or_get(
-    #             nodes, pre_task_name, DagNode)
-    #         dag_node.prev.add(pre_node)
-    #         pre_node.next.add(dag_node)
-    
     for node in nodes.values():
         node.count_next = len(node.next)
         node.optimize_next = node.next.copy()
@@ -353,7 +348,7 @@ def gen_locations(task_dict: dict) -> dict:
                 break
         else:
             break
-    
+
     # 关系节点越多的组越靠上
     groups.sort(key=dag_node_group_sort_key, reverse=True)
 
@@ -367,25 +362,26 @@ def gen_locations(task_dict: dict) -> dict:
 
         # DAG拓扑排序
         dag_level = 0
-        
+
         group_level_list = group.copy()
 
         node_in_levels: list[list[DagNode]] = []
-        
+
         # 生成DAG层级
         while len(group_level_list) > 0:
             node_in_level: list[DagNode] = []
-            no_prev_list = [e for e in group_level_list.values() if not e.optimize_prev]
+            no_prev_list = [e for e in group_level_list.values()
+                            if not e.optimize_prev]
             for dag_node in no_prev_list:
                 dag_node.dag_level = dag_level
                 for next_node in dag_node.next:
                     next_node.optimize_prev.remove(dag_node)
                 group_level_list.pop(dag_node.name)
                 node_in_level.append(dag_node)
-            
+
             node_in_levels.append(node_in_level)
             dag_level += 1
-        
+
         # 优化跨层级节点
         for node_in_level in node_in_levels:
             for dag_node in node_in_level:
@@ -412,7 +408,7 @@ def gen_locations(task_dict: dict) -> dict:
 
             if max_hight < yoff:
                 max_hight = yoff
-            
+
             xoff += 1
             yoff = begin_yoff
 
@@ -521,12 +517,12 @@ def generate_process_definition_json(process_definitions: dict):
         process_definition['connects'] = json.dumps(
             process_definition['connects'])
 
+
 def merge_process_definitions_to_db(process_definitions: dict):
     pd_id = {}
 
     for process_definition in process_definitions.values():
         pd_id[process_definition['id']] = process_definition
-
 
     # debug output : max concurrent thread's count
     # def calc_id_count(id, ids):

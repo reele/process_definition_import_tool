@@ -1,6 +1,9 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
 
 import ds_generator
 from datetime import datetime
+
 
 class EtlNode(object):
     """
@@ -49,7 +52,6 @@ class EtlNode(object):
                 else:
                     task_node = child_node.gen_ds_node(None)
                 ds_generator.add_node_to_task_dict(task_dict, task_node)
-
 
             locations = ds_generator.gen_locations(task_dict)
 

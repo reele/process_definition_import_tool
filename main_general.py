@@ -12,6 +12,7 @@ SELF_DEPENDENT_CYCLE_MAPPINGS = {
     'M0': ['month', 'lastMonthBegin', 'MB'],
 }
 
+SELF_DEPENDENT_GROUPS = ('ODB', 'SDB', 'PDB', 'CDB', 'STS')
 
 # 组映射关系
 PROCESS_RELATIONS = {
@@ -272,7 +273,7 @@ if __name__ == "__main__":
             continue
         if task_node.name == 'root':
             continue
-        if task_node.group_name not in ('ODB', 'SDB', 'PDB', 'CDB', 'STS'):
+        if task_node.group_name not in SELF_DEPENDENT_GROUPS:
             continue
 
         path = task_node.parent.path + '/' + task_node.name + \

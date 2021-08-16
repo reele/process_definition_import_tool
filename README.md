@@ -57,3 +57,4 @@ Dolphinscheduler 的一个外部作业导入工具
 2. 配置对应的`ds_config.py`
 3. 生成`general_scripts.py`
 4. 对照`general_scripts.py`, 编辑`main_general.py`中的`SELF_DEPENDENT_CYCLE_MAPPINGS`,`SELF_DEPENDENT_GROUPS`,`PROCESS_RELATIONS`
+5. 执行`python main_general.py`

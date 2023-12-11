@@ -6,21 +6,8 @@ from typing import Any
 import ds_api
 from simple_log import print_and_log, LOG_TIME_STR
 import ds_db
+from auto_params import AutoParams
 
-
-SUB_PROCESS_DISABLED = [
-# 'T05_OPN_BNK_FX_STL_EVE_UP_H_S09',
-# 'T01_CUST_RISK_INFO_H_S04_1',
-# 'T01_FUND_CUST_BASIC_INFO_S10_1',
-# 'T01_PTY_CLS_H_S11_1',
-# 'T01_PTY_IDTFY_H_S01_1',
-# 'T01_PTY_IDTFY_H_S02_1',
-# 'T01_PTY_IDTFY_H_S03_1',
-# 'T01_PTY_IDTFY_H_S04_1',
-# 'T01_PTY_IDTFY_H_S09_1',
-# 'T01_PTY_IDTFY_H_S10_1',
-# 'T01_PTY_IDTFY_H_S11_1'
-]
 
 def confirm(prompt, msg_yes, msg_no):
     while True:
@@ -35,52 +22,8 @@ def confirm(prompt, msg_yes, msg_no):
                 print(msg_no)
             return False
 
-class AutoParams:
-    def __init__(self, seqs: dict[str, Any]):
-        self.params = seqs
 
-    def next(self, key):
-        """从集合中取对象的下一个迭代值
-        int : += 1
-        list: pop()
-        """
-        value = self.params[key]
-        if isinstance(value, int):
-            self.params[key] = value + 1
-            return value
-        elif isinstance(value, list):
-            return value.pop()
-        else:
-            raise TypeError()
-
-    def get(self, key):
-        """从集合中取对象的值"""
-        value = self.params[key]
-        return value
-        # if isinstance(value, int):
-        #     return value
-        # elif isinstance(value, str):
-        #     return value
-        # elif isinstance(value, list):
-        #     return value[-1]
-        # else:
-        #     raise TypeError()
-
-    def pick(self, params_key, key):
-        """从集合中取出对象
-        dict: pop()
-        """
-        value = self.params[params_key]
-        if isinstance(value, dict):
-            return value.pop(key)
-        else:
-            raise TypeError()
-
-    def reset(self, str, value):
-        self.params[str] = value
-
-
-def compare_dict(l: dict[str:Any], r: dict[str:Any], ignored_keys: list[str]):
+def compare_dict(l: dict[str:Any], r: dict[str:Any], ignored_keys: list[str], key_path=None):
 
     errors: dict[str, tuple] = {}
 
@@ -92,13 +35,16 @@ def compare_dict(l: dict[str:Any], r: dict[str:Any], ignored_keys: list[str]):
         if isinstance(v, dict):
             if rv:
                 if isinstance(rv, dict):
-                    sub_errors = compare_dict(v, rv, ignored_keys)
+                    sub_errors = compare_dict(v, rv, ignored_keys, f'{key_path}.{k}' if key_path else k)
                     if sub_errors:
-                        errors[k] = sub_errors
+                        errors.update(sub_errors)
                     continue
-        
+        if rv is None:
+            rv = ''
+        if v is None:
+            v = ''
         if v != rv:
-            errors[k] = (v, rv)
+            errors[f'{key_path}.{k}' if key_path else k] = (v, rv)
 
 
     return errors
@@ -127,7 +73,7 @@ class DAGNode(object):
         'taskParamMap',
         'description',
         'taskPriority',
-        'timeoutNotifyStrategy'
+        'timeoutNotifyStrategy',
     ]
     
     ignored_keys_td_void = [
@@ -144,42 +90,37 @@ class DAGNode(object):
         # 'flag',
         'timeoutNotifyStrategy'
     ]
+
+    task_key_path_descs = {
+        "code": '代码',
+        "name": '任务名称',
+        "version": '版本',
+        "description": '任务描述',
+        "projectCode": '所属项目代码',
+        "userId": '用户ID',
+        "taskType": '任务类型',
+        "taskParams": '任务参数',
+        "taskParamList": '任务参数表',
+        "taskParamMap": '任务映射',
+        "flag": '启用标志',
+        "taskPriority": '任务优先级',
+        "userName": '用户名称',
+        "projectName": '项目名称',
+        "workerGroup": '工作组',
+        "environmentCode": '环境代码(内部)',
+        "failRetryTimes": '失败重试次数',
+        "failRetryInterval": '失败重试间隔(分)',
+        "timeoutFlag": '超时告警标志',
+        "timeoutNotifyStrategy": '超时通知策略',
+        "timeout": '超时时间(分)',
+        "delayTime": '延迟执行时间',
+        "resourceIds": '资源ID',
+        "createTime": '建立时间',
+        "updateTime": '更新时间',
+        "modifyBy": '修改人',
+        "taskParams.dependence.dependTaskList": '依赖任务列表',
+    }
     
-    class DAGJsonEncoder(json.JSONEncoder):
-        def default_children(self, o):
-            if isinstance(o, DAGNode):
-                node_object = {
-                    "name": o.name,
-                    "type": o.type,
-                    "cycle": o.cycle,
-                    "path": o.path,
-                    "prev_nodes": [node.name for node in o.prev_nodes],
-                    "next_nodes": [node.name for node in o.next_nodes],
-                }
-
-                return node_object
-            return None
-
-        def default(self, o):
-            try:
-                if isinstance(o, DAGNode):
-                    node_object = {
-                        "name": o.name,
-                        "type": o.type,
-                        "cycle": o.cycle,
-                        "path": o.path,
-                        "prev_nodes": [node.name for node in o.prev_nodes],
-                        "next_nodes": [node.name for node in o.next_nodes],
-                        "children": [
-                            self.default_children(child) for child in o.children
-                        ],
-                    }
-            except TypeError:
-                pass
-            else:
-                return node_object
-            # Let the base class default method raise the TypeError
-            return json.JSONEncoder.default(self, o)
 
     TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
     TASK_DEF_TYPE_MAPPING = {
@@ -190,16 +131,19 @@ class DAGNode(object):
     }
 
     def __init__(self, type: str = None, name: str = None):
+        self._type: str = None
+        self.type = type
+        self.project_name: str = None
         self.group_code: str = None
-        self.type: str = type
         self.name: str = name
         self.children: list[DAGNode] = []
         self.parent: DAGNode = None
         self.dependents: set[DAGNode] = set()
         self.dependency_node: DAGNode = None
         self.dependencies: set[DAGNode] = set()
+        self.highest_dependent_level = 0
 
-        self.max_dag_dep_level = 0
+        self.ignored = False
 
         self.command: str = None
         self.prev_nodes: list[DAGNode] = []
@@ -225,6 +169,11 @@ class DAGNode(object):
         self.ds_task_name: str = None
         self.fail_retry_times = 0
         self.fail_retry_interval = 1
+        # t_ds_task_definition.workerGroup
+        self.ds_worker_group = None
+        # t_ds_task_definition.environmentCode
+        self.ds_environment = None
+        self.fail_retry_interval = 1
 
         # dag optimize
         self.count_next: int = -1
@@ -233,6 +182,24 @@ class DAGNode(object):
         self.optimize_prev: list[DAGNode] = None
         self.cleared = False
         self.dag_level = 0
+        self.flag = None
+        self.project_modifiable = False
+
+    
+    @property
+    def type(self):
+        return self._type
+
+    @type.setter
+    def type(self, value):
+        assert value in ('root','project', 'process', 'shell', 'dependent', 'self_dependent'), f'value={value}'
+        self._type = value
+    
+    def get_valid_children(self):
+        for child_node in self.children:
+            if child_node.ignored:
+                continue
+            yield child_node
 
     def reset_optimize_data(self):
         self.count_next = len(self.next_nodes)
@@ -245,7 +212,7 @@ class DAGNode(object):
     # def get_task_count(self):
     #     if self.type == 'root':
     #         count = 0
-    #         for child_node in self.children:
+    #         for child_node in self.get_valid_chindren():
     #             count += child_node.get_task_count()
     #         return count
     #     elif self.type == 'process':
@@ -253,18 +220,24 @@ class DAGNode(object):
     #         if self.children:
     #             print('{} child count: {}'.format(
     #                 self.name, len(self.children)))
-    #         for child_node in self.children:
+    #         for child_node in self.get_valid_chindren():
     #             count += child_node.get_task_count()
     #         return count
     #     else:
     #         return 1
 
     def create_processes_and_codes(self, params: AutoParams):
-        self.ds_project_code = params.get("project_code")
+        
+        if self.type == "project":
+            if self.project_modifiable:
+                for child_node in self.get_valid_children():
+                    child_node.create_processes_and_codes(params)
+            return
 
         if self.parent.type == "process":
             # 是流程下的子任务, 生成任务编号
-            task_idendifier = "{process_name}:{task_name}:{task_type}".format(
+            task_idendifier = "{project_name}:{process_name}:{task_name}:{task_type}".format(
+                project_name=self.project_name,
                 process_name=self.parent.name,
                 task_name=self.name,
                 task_type=DAGNode.TASK_DEF_TYPE_MAPPING[self.type],
@@ -300,43 +273,56 @@ class DAGNode(object):
                 )
             self.ds_process_id = 0
 
-            for child_node in self.children:
+            for child_node in self.get_valid_children():
                 child_node.create_processes_and_codes(params)
 
     def match_processes_and_codes(self, params: AutoParams):
-        self.ds_project_code = params.get("project_code")
+        
+        if self.type == "project":
+            for child_node in self.get_valid_children():
+                child_node.match_processes_and_codes(params)
+            return
 
         if self.parent.type == "process":
-            # 是流程下的子任务, 生成任务编号
-            task_idendifier = "{process_name}:{task_name}:{task_type}".format(
-                process_name=self.parent.name,
-                task_name=self.ds_task_name if self.type == 'process' and self.ds_task_name else self.name,
-                task_type=DAGNode.TASK_DEF_TYPE_MAPPING[self.type],
-            )
-            try:
-                data = params.pick("old_tasks", task_idendifier)
-                self.ds_origin_task = data
-            except KeyError:
-                data = {"code": 0}
-            self.ds_task_code = data["code"]
+            # 是流程下的子任务, 关联任务信息
+                
+            if self.ds_task_code != 0:
+                try:
+                    self.ds_origin_task = params.pick("old_tasks", self.ds_project_code, self.ds_task_code)
+                except KeyError:
+                    assert False, "未找到任务代码 {code} -> {project_name}:{process_name}:{task_name}:{task_type}".format(
+                        code=self.ds_task_code,
+                        project_name=self.project_name,
+                        process_name=self.parent.name,
+                        task_name=self.ds_task_name if self.type == 'process' and self.ds_task_name else self.name,
+                        task_type=DAGNode.TASK_DEF_TYPE_MAPPING[self.type],
+                    )
             self.ds_task_id = 0
 
         if self.type == "process":
             # 按名字取出已有的process, 不存在时新建
-            try:
-                data = params.pick("old_process", self.name)
-                self.ds_origin_process = params.pick("origin_processes", self.name)
-            except KeyError:
-                data = {"code": 0}
+            if self.ds_process_code != 0:
+                try:
+                    self.ds_origin_process = params.pick("old_process", self.ds_project_code, self.ds_process_code)
+                except KeyError:
+                    assert False, "未找到流程代码 {code} -> {project_name}:{process_name}".format(
+                        code=self.ds_process_code,
+                        project_name=self.project_name,
+                        process_name=self.name,
+                    )
 
-            self.ds_process_code = data["code"]
             self.ds_process_id = 0
 
-            for child_node in self.children:
+            for child_node in self.get_valid_children():
                 child_node.match_processes_and_codes(params)
 
     def gen_ds_task_node(self, params: AutoParams):
-        flag = 'YES'
+        assert self.ds_project_code != 0, f'{self.path}, {self.type}'
+        if self.ds_task_code == 0:
+            params.get('code_node_mapping')[self.ds_project_code][id(self)] = self
+        else:
+            params.get('code_node_mapping')[self.ds_project_code][self.ds_task_code] = self
+        flag = self.flag
         name = self.name
         if self.type == "process":
             task_type = "SUB_PROCESS"
@@ -348,8 +334,8 @@ class DAGNode(object):
                 "waitStartTimeout": {},
                 "switchResult": {},
             }
-            if self.name in SUB_PROCESS_DISABLED:
-                flag = 'NO'
+            # if self.name.strip() in SUB_PROCESS_DISABLED:
+            #     flag = 'NO'
             
             if self.ds_task_name:
                 name = self.ds_task_name
@@ -385,7 +371,7 @@ class DAGNode(object):
                             "relation": "AND",
                             "dependItemList": [
                                 {
-                                    "projectCode": self.ds_project_code,
+                                    "projectCode": self.dependency_node.ds_project_code,
                                     "definitionCode": self.dependency_node.ds_process_code if self.dependency_node.type == 'process' else self.dependency_node.parent.ds_process_code,
                                     "depTaskCode": 0 if self.dependency_node.type == 'process' else self.dependency_node.ds_task_code,
                                     "cycle": self.cycle,
@@ -416,6 +402,7 @@ class DAGNode(object):
         task_priority = 'MEDIUM'
         # task_priority = "HIGH" if self.dependents else "MEDIUM"
 
+
         self.ds_task = {
             # "id": self.ds_task_id,
             "code": self.ds_task_code,
@@ -432,8 +419,8 @@ class DAGNode(object):
             "taskPriority": task_priority,
             "userName": None,
             "projectName": None,
-            "workerGroup": "default",
-            "environmentCode": params.get("environment_code"),
+            "workerGroup": self.ds_worker_group,
+            "environmentCode": params.get('environments').get(self.ds_environment),
             "failRetryTimes": self.fail_retry_times,
             "failRetryInterval": self.fail_retry_interval,
             "timeoutFlag": "CLOSE",
@@ -445,6 +432,11 @@ class DAGNode(object):
             "updateTime": params.get('operation_time'),
             "modifyBy": None,
         }
+        if flag is None:
+            print(self.ds_task)
+
+        assert flag is not None
+
 
         return self.ds_task
 
@@ -452,7 +444,7 @@ class DAGNode(object):
 
         locations = []
 
-        for child in self.children:
+        for child in self.get_valid_children():
             child.reset_optimize_data()
 
         # 节点分组
@@ -477,7 +469,7 @@ class DAGNode(object):
 
         groups: list[dict[str, DAGNode]] = []
         while True:
-            for node in self.children:
+            for node in self.get_valid_children():
                 if not node.cleared:
                     group = gen_task_locations_clear_connected_nodes(node)
                     groups.append(group)
@@ -512,6 +504,7 @@ class DAGNode(object):
             return None
 
         def optimize_chain(base_node: DAGNode):
+            return
             for next_node in base_node.next_nodes.copy():
                 if next_node.dag_level > base_node.dag_level + 1:
                     result = find_redundant_chain(base_node, next_node)
@@ -638,9 +631,9 @@ class DAGNode(object):
                         "processDefinitionVersion": 1,
                         "projectCode": self.ds_project_code,
                         "processDefinitionCode": self.ds_process_code,
-                        "preTaskCode": prev_node.ds_task_code,
+                        "preTaskCode": prev_node.ds_task_code if prev_node.ds_task_code != 0 else id(prev_node),
                         "preTaskVersion": 1,
-                        "postTaskCode": child.ds_task_code,
+                        "postTaskCode": child.ds_task_code if child.ds_task_code != 0 else id(child),
                         "postTaskVersion": 1,
                         "conditionType": "NONE",
                         "conditionParams": {},
@@ -658,7 +651,7 @@ class DAGNode(object):
                         "processDefinitionCode": self.ds_process_code,
                         "preTaskCode": 0,
                         "preTaskVersion": 1,
-                        "postTaskCode": child.ds_task_code,
+                        "postTaskCode": child.ds_task_code if child.ds_task_code != 0 else id(child),
                         "postTaskVersion": 1,
                         "conditionType": "NONE",
                         "conditionParams": {},
@@ -669,82 +662,21 @@ class DAGNode(object):
 
         return relations
 
-    def gen_init_ds_node(self, params: AutoParams):
-        
-        if self != params.get('init_process'):
-            raise ValueError('this method only used for init_process_node')
-        
-        ds_task_nodes = []
-        for child_node in self.children:
-            if child_node.type == "process":
-                if not child_node.ds_task:
-                    continue
-                task_ref = child_node.ds_task.copy()
-                task_ref['name'] = task_ref['name']+'_init_task'
-
-                try:
-                    code = params.next("task_codes")
-                except IndexError:
-                    params.reset("task_codes", ds_api.generate_task_codes(200))
-                    code = params.next("task_codes")
-                data = {"code": code}
-                task_ref['code'] = data["code"]
-                ds_task_nodes.append(task_ref)
-            else:
-                raise ValueError('init node has nonprocess child')
-        
-        relations = []
-        for ds_task_node in ds_task_nodes:
-            relations.append(
-                {
-                    # "id": 0, # seqs.next('id'),
-                    "name": "",
-                    "processDefinitionVersion": 1,
-                    "projectCode": self.ds_project_code,
-                    "processDefinitionCode": self.ds_process_code,
-                    "preTaskCode": 0,
-                    "preTaskVersion": 1,
-                    "postTaskCode": ds_task_node['code'],
-                    "postTaskVersion": 1,
-                    "conditionType": "NONE",
-                    "conditionParams": {},
-                    "createTime": params.get('operation_time'),
-                    "updateTime": params.get('operation_time'),
-                }
-            )
-
-        self.ds_process = {
-            "code": self.ds_process_code,
-            "locations": json.dumps([]),
-            "name": self.name,
-            "projectCode": self.ds_project_code,
-            "taskDefinitionJson": json.dumps(ds_task_nodes),
-            "taskRelationJson": json.dumps(relations),
-            "tenantCode": "etl",
-            "description": self.description,
-            "globalParams": json.dumps(
-                [
-                    {
-                        "prop": "global_bizdate",
-                        "direct": "IN",
-                        "type": "VARCHAR",
-                        "value": "${system.biz.date}",
-                    }
-                ]
-            ),
-            "releaseState": "ONLINE",
-            "timeout": 0,
-        }
-
     def gen_ds_node(self, params: AutoParams):
-        if self.type == "process":
+        if self.type == 'project':
+            if self.project_modifiable:
+                for child_node in self.get_valid_children():
+                    assert child_node.type == "process"
+                    child_node.gen_ds_node(params)
+        elif self.type == "process":
             ds_task_nodes = []
             for child_node in self.children:
                 if child_node.type == "process":
                     child_node.gen_ds_node(params)
                     ds_task_nodes.append(child_node.gen_ds_task_node(params))
                 else:
-                    ds_task_nodes.append(child_node.gen_ds_node(params))
+                    if not child_node.ignored:
+                        ds_task_nodes.append(child_node.gen_ds_node(params))
 
             self.ds_locations = self.gen_task_locations()
 
@@ -787,9 +719,14 @@ class DAGNode(object):
             return self.ds_node
 
     def compare_changes(self, params: AutoParams):
-        if self.type == "process":
+        if self.type == 'project':
+            if self.project_modifiable:
+                for child_node in self.get_valid_children():
+                    assert child_node.type == "process"
+                    child_node.compare_changes(params)
+        elif self.type == "process":
             self.ds_modify_desc = ''
-            for child_node in self.children:
+            for child_node in self.get_valid_children():
                 if child_node.type == "process":
                     child_node.compare_changes(params)
                 elif child_node.ds_modify_desc:
@@ -815,33 +752,45 @@ class DAGNode(object):
                         for relation_key, relation_value in local_relation_dict.items():
                             remote_relation_value = remote_relation_dict.get(relation_key)
                             if not remote_relation_value:
-                                print_and_log(
-                                    'cover_change',
-                                    "将建立流程关系:[{}]::[{}] ".format(
-                                        self.name, relation_key
+                                codes = relation_key.split('_')
+                                if codes[0] != '0':
+                                    l: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[0])]
+                                    r: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[1])]
+                                    print_and_log(
+                                        'cover_change',
+                                        "将建立流程关系:[{}]::[{}({})]->[{}({})] ".format(
+                                            self.name, l.name, l.type, r.name, r.type
+                                        )
                                     )
-                                )
                                 self.ds_modify_desc = 'update'
                             else:
                                 sub_errors = compare_dict(relation_value, remote_relation_value, DAGNode.ignored_keys_tr)
                                 if sub_errors:
-                                    print_and_log(
-                                        'cover_change',
-                                        "将建立流程关将更新:[{}]::[{}]:({})".format(
-                                            self.name, relation_key, sub_errors
+                                    codes = relation_key.split('_')
+                                    if codes[0] != '0':
+                                        l: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[0])]
+                                        r: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[1])]
+                                        print_and_log(
+                                            'cover_change',
+                                            "将更新流程关系:[{}]::[{}({})]->[{}({})] ".format(
+                                                self.name, l.name, l.type, r.name, r.type
+                                            )
                                         )
-                                    )
                                     self.ds_modify_desc = 'update'
                         
                         diff_keys = set(remote_relation_dict) - set(local_relation_dict)
                         if diff_keys:
                             for sk in diff_keys:
-                                print_and_log(
-                                    'cover_change',
-                                    "将删除流程关系:[{}]::[{}]:({})".format(
-                                        self.name, sk, remote_relation_dict[sk]
+                                codes = sk.split('_')
+                                if codes[0] != '0':
+                                    l: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[0])]
+                                    r: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[1])]
+                                    print_and_log(
+                                        'cover_change',
+                                        "将删除流程关系:[{}]::[{}({})]->[{}({})] ".format(
+                                            self.name, l.name, l.type, r.name, r.type
+                                        )
                                     )
-                                )
                             self.ds_modify_desc = 'update'
 
                     elif key == "taskDefinitionJson":
@@ -870,19 +819,30 @@ class DAGNode(object):
                                 if sub_errors:
                                     print_and_log(
                                         'cover_change',
-                                        "将更新任务:[{}]::[{}][{}]:({})".format(
-                                            self.name, task_value['taskType'], task_key, sub_errors
+                                        "将更新任务:[{}]::[{}][{}]:".format(
+                                            self.name, task_value['taskType'], task_key
                                         )
                                     )
+                                    for key_path, diff in sub_errors.items():
+                                        key_name = DAGNode.task_key_path_descs.get(key_path, key_path)
+                                        print_and_log(
+                                            'cover_change',
+                                            "    {}: [{}]->[{}]".format(
+                                                key_name, diff[1], diff[0]
+                                            )
+                                        )
+
+
                                     self.ds_modify_desc = 'update'
                         
                         diff_keys = set(remote_task_dict) - set(local_task_dict)
                         if diff_keys:
                             for sk in diff_keys:
+                                task_value = remote_task_dict.get(sk)
                                 print_and_log(
                                     'cover_change',
-                                    "将删除任务:[{}]::[{}][{}]:({})".format(
-                                        self.name, task_value['taskType'], sk, remote_task_dict[sk]
+                                    "将删除任务:[{}]::[{}][{}]".format(
+                                        self.name, task_value['taskType'], sk
                                     )
                                 )
                             self.ds_modify_desc = 'update'
@@ -891,8 +851,8 @@ class DAGNode(object):
                         if json.loads(value) != json.loads(process_def[key]):
                             print_and_log(
                                 'cover_change',
-                                "process:[{}], relation:[{}] will update:({},{})".format(
-                                    self.name, relation_key, value, process_def[key]
+                                "process:[{}] will update:({},{})".format(
+                                    self.name, value, process_def[key]
                                 )
                             )
                             self.ds_modify_desc = 'update'
@@ -918,21 +878,21 @@ class DAGNode(object):
                     )
                     params.next('changed_process_count')
                     
-                    for child in self.children:
-                        if child.type in ('self_dependent', 'dependent'):
-                            # 增加新流程的初始化调用流程, 手动调用后手动删除
-                            init_process_node = params.get('init_process')
-                            if init_process_node is None:
-                                init_process_node = DAGNode()
-                                init_process_node.name = 'init_process'
-                                init_process_node.type = 'process'
-                                init_process_node.parent = None
-                                init_process_node.description = '初始化流程状态'
-                                init_process_node.path = '/init_processes'
-                                params.reset('init_process', init_process_node)
+                    # for child in self.get_valid_chindren():
+                    #     if child.type in ('self_dependent', 'dependent'):
+                    #         # 增加新流程的初始化调用流程, 手动调用后手动删除
+                    #         init_process_node = params.get('init_process')
+                    #         if init_process_node is None:
+                    #             init_process_node = DAGNode()
+                    #             init_process_node.name = 'init_process'
+                    #             init_process_node.type = 'process'
+                    #             init_process_node.parent = None
+                    #             init_process_node.description = '初始化流程状态'
+                    #             init_process_node.path = '/init_processes'
+                    #             params.reset('init_process', init_process_node)
                             
-                            init_process_node.children.append(self)
-                            break
+                    #         init_process_node.children.append(self)
+                    #         break
             else:
                 print_and_log(
                     'cover_change',
@@ -941,36 +901,44 @@ class DAGNode(object):
                 self.ds_modify_desc = 'create'
                 params.next('changed_process_count')
 
-                for child in self.children:
-                    if child.type in ('self_dependent', 'dependent'):
-                        # 增加新流程的初始化调用流程, 手动调用后手动删除
-                        init_process_node = params.get('init_process')
-                        if init_process_node is None:
-                            init_process_node = DAGNode()
-                            init_process_node.name = 'init_process'
-                            init_process_node.type = 'process'
-                            init_process_node.parent = None
-                            init_process_node.description = '初始化流程状态'
-                            init_process_node.path = '/init_processes'
-                            params.reset('init_process', init_process_node)
+                # for child in self.get_valid_chindren():
+                #     if child.type in ('self_dependent', 'dependent'):
+                #         # 增加新流程的初始化调用流程, 手动调用后手动删除
+                #         init_process_node = params.get('init_process')
+                #         if init_process_node is None:
+                #             init_process_node = DAGNode()
+                #             init_process_node.name = 'init_process'
+                #             init_process_node.type = 'process'
+                #             init_process_node.parent = None
+                #             init_process_node.description = '初始化流程状态'
+                #             init_process_node.path = '/init_processes'
+                #             params.reset('init_process', init_process_node)
                         
-                        init_process_node.children.append(self)
-                        break
+                #         init_process_node.children.append(self)
+                #         break
 
     def measure_path(self):
         if self.path:
             return self.path
         
         if self.parent:
-            self.path = self.parent.measure_path() + '/' + self.name
+            self.path = f'{self.parent.measure_path()}/{self.name}'
         else:
-            self.path = '/' + self.name
+            if self.type == 'root':
+                self.path = ''
+            else:
+                self.path = f'/{self.name}'
         
         return self.path
 
     def merge_ds_node(self, params: AutoParams):
-        if self.type == "process":
-            for child_node in self.children:
+        if self.type == 'project':
+            if self.project_modifiable:
+                for child_node in self.get_valid_children():
+                    assert child_node.type == "process"
+                    child_node.merge_ds_node(params)
+        elif self.type == "process":
+            for child_node in self.get_valid_children():
                 if child_node.type == "process":
                     child_node.merge_ds_node(params)
             
@@ -980,13 +948,24 @@ class DAGNode(object):
                 )
                 print_and_log(
                     "merge",
-                    "已写入流程:{}, 代码:{}, 含 {} 个节点, 建立空任务:{}".format(
+                    "已写入流程:[{}/{}], 代码:{}, 含 {} 个节点, 建立空任务:{}".format(
+                        self.project_name,
                         self.name,
                         self.ds_process_code,
                         len(self.children),
                         params.get("is_generate_void"),
                     )
                 )
+                schedule = params.get('schedules')[self.ds_project_code].get(self.ds_process_code)
+                if schedule and schedule['releaseState'] == 'ONLINE':
+                    # 工作流存在定时且原状态为上线时, 自动上线工作流
+                    assert self.project_name == schedule['projectName']
+                    ds_api.online_schedule(self.ds_project_code, schedule['id'])
+                    print_and_log(
+                        "merge",
+                        f" * 流程[{self.project_name}/{self.name}]包含定时, 已自动上线定时设置"
+                    )
+
         else:
             raise TypeError("must be process")
 
@@ -1004,7 +983,13 @@ class DAGNode(object):
             environment_code
         '''
         
-        if self.type != "process":
+        if self.type == "project":
+            if self.project_modifiable:
+                for child_node in self.get_valid_children():
+                    assert child_node.type == "process"
+                    child_node.create_fake_instance(params)
+            return
+        elif self.type != "process":
             raise TypeError("must be process")
         
         connection = params.get('connection')
@@ -1013,7 +998,7 @@ class DAGNode(object):
             
             has_self_dependent = False
 
-            for child_node in self.children:
+            for child_node in self.get_valid_children():
                 if child_node.type == 'self_dependent':
                     has_self_dependent = True
                     break
@@ -1071,7 +1056,7 @@ class DAGNode(object):
                     )
                 )
             
-                for child_node in self.children:
+                for child_node in self.get_valid_children():
                     task_instance_id = ds_db.gen_task_instance_id(connection)
                     task_instance = {
                         "id": task_instance_id,
@@ -1096,8 +1081,8 @@ class DAGNode(object):
                         "retry_interval": 1,
                         "max_retry_times": 0,
                         "task_instance_priority": 2,
-                        "worker_group": "default",
-                        "environment_code": params.get('environment_code'),
+                        "worker_group": self.ds_worker_group,
+                        "environment_code": params.get('environments').get(self.ds_environment),
                         "environment_config": "",
                         "executor_id": 2,
                         "first_submit_time": None,
@@ -1117,6 +1102,9 @@ class DAGNode(object):
                         )
                     )
 
-        for child_node in self.children:
+        for child_node in self.get_valid_children():
             if child_node.type == "process":
                 child_node.create_fake_instance(params)
+
+    def __repr__(self) -> str:
+        return self.path

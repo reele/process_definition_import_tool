@@ -31,16 +31,23 @@ class AutoParams:
         #     return value[-1]
         # else:
         #     raise TypeError()
-
-    def pick(self, params_key, key):
+    
+    def pick(self, params_key, key, key2=None):
         """从集合中取出对象
         dict: pop()
         """
-        value = self.params[params_key]
-        if isinstance(value, dict):
-            return value.pop(key)
+        if key2:
+            value = self.params[params_key][key]
+            if isinstance(value, dict):
+                return value.pop(key2)
+            else:
+                raise TypeError()
         else:
-            raise TypeError()
+            value = self.params[params_key]
+            if isinstance(value, dict):
+                return value.pop(key)
+            else:
+                raise TypeError()
 
     def reset(self, str, value):
         self.params[str] = value

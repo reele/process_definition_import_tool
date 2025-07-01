@@ -57,7 +57,7 @@ class DAGNode(object):
         'postTaskCode',
         'createTime',
         'updateTime',
-        'processDefinitionVersion',
+        'workflowDefinitionVersion',
         'preTaskVersion',
         'postTaskVersion'
     ]
@@ -74,6 +74,8 @@ class DAGNode(object):
         'description',
         'taskPriority',
         'timeoutNotifyStrategy',
+        'operateTime',
+        'operator'
     ]
     
     ignored_keys_td_void = [
@@ -124,7 +126,7 @@ class DAGNode(object):
 
     TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
     TASK_DEF_TYPE_MAPPING = {
-        "process": "SUB_PROCESS",
+        "process": "SUB_WORKFLOW",
         "shell": "SHELL",
         "dependent": "DEPENDENT",
         "self_dependent": "DEPENDENT",
@@ -146,8 +148,8 @@ class DAGNode(object):
         self.ignored = False
 
         self.command: str = None
-        self.prev_nodes: list[DAGNode] = []
-        self.next_nodes: list[DAGNode] = []
+        self.prev_nodes: set[DAGNode] = set()
+        self.next_nodes: set[DAGNode] = set()
         self.description: str = None
         self.path: str = None
         self.cycle: str = None
@@ -325,16 +327,14 @@ class DAGNode(object):
         flag = self.flag
         name = self.name
         if self.type == "process":
-            task_type = "SUB_PROCESS"
+            task_type = "SUB_WORKFLOW"
             task_description = self.description
             task_params = {
-                "processDefinitionCode": self.ds_process_code,
-                "dependence": {},
-                "conditionResult": {"successNode": [], "failedNode": []},
-                "waitStartTimeout": {},
-                "switchResult": {},
+                "localParams":[],
+                "resourceList":[],
+                "workflowDefinitionCode": self.ds_process_code
             }
-            # if self.name.strip() in SUB_PROCESS_DISABLED:
+            # if self.name.strip() in SUB_WORKFLOW_DISABLED:
             #     flag = 'NO'
             
             if self.ds_task_name:
@@ -354,28 +354,31 @@ class DAGNode(object):
                 "resourceList": [],
                 "rawScript": "echo '{}'".format(self.command.replace("'", "\\'"))
                 if params.get("is_generate_void")
-                else self.command,
-                "dependence": {},
-                "conditionResult": {"successNode": [], "failedNode": []},
-                "waitStartTimeout": {},
-                "switchResult": {},
+                else self.command
             }
         elif self.type == "dependent" or self.type == "self_dependent":
             task_type = "DEPENDENT"
             task_description = self.description
             task_params = {
+                "localParams":[],
+                "resourceList":[],
                 "dependence": {
+                    "checkInterval":10,
+                    "failurePolicy":"DEPENDENT_FAILURE_FAILURE",
                     "relation": "AND",
                     "dependTaskList": [
                         {
                             "relation": "AND",
                             "dependItemList": [
                                 {
+                                    "dependentType":"DEPENDENT_ON_TASK",
                                     "projectCode": self.dependency_node.ds_project_code,
                                     "definitionCode": self.dependency_node.ds_process_code if self.dependency_node.type == 'process' else self.dependency_node.parent.ds_process_code,
                                     "depTaskCode": 0 if self.dependency_node.type == 'process' else self.dependency_node.ds_task_code,
                                     "cycle": self.cycle,
                                     "dateValue": self.continuous_check_date,
+                                    "state":None,
+                                    "parameterPassing":False
                                 }
                             ],
                         }
@@ -389,6 +392,7 @@ class DAGNode(object):
                     "enable": False,
                 },
                 "switchResult": {},
+
             }
 
             if params.get("is_generate_void"):
@@ -431,6 +435,13 @@ class DAGNode(object):
             "createTime": params.get('operation_time'),
             "updateTime": params.get('operation_time'),
             "modifyBy": None,
+            "taskGroupId" : 0,
+            "taskGroupPriority" : 0,
+            "cpuQuota" : -1,
+            "memoryMax" : -1,
+            "taskExecuteType" : "BATCH",
+            "operator" : 1,
+            "operateTime" : params.get('operation_time')
         }
         if flag is None:
             print(self.ds_task)
@@ -628,9 +639,9 @@ class DAGNode(object):
                     {
                         # "id": 0,#seqs.next('id'),
                         "name": "",
-                        "processDefinitionVersion": 1,
+                        "workflowDefinitionVersion": 1,
                         "projectCode": self.ds_project_code,
-                        "processDefinitionCode": self.ds_process_code,
+                        "workflowDefinitionCode": self.ds_process_code,
                         "preTaskCode": prev_node.ds_task_code if prev_node.ds_task_code != 0 else id(prev_node),
                         "preTaskVersion": 1,
                         "postTaskCode": child.ds_task_code if child.ds_task_code != 0 else id(child),
@@ -639,6 +650,8 @@ class DAGNode(object):
                         "conditionParams": {},
                         "createTime": params.get('operation_time'),
                         "updateTime": params.get('operation_time'),
+                        # "operator" : 1,
+                        # "operateTime" : params.get('operation_time'),
                     }
                 )
             if not child.prev_nodes:
@@ -646,9 +659,9 @@ class DAGNode(object):
                     {
                         # "id": 0, # seqs.next('id'),
                         "name": "",
-                        "processDefinitionVersion": 1,
+                        "workflowDefinitionVersion": 1,
                         "projectCode": self.ds_project_code,
-                        "processDefinitionCode": self.ds_process_code,
+                        "workflowDefinitionCode": self.ds_process_code,
                         "preTaskCode": 0,
                         "preTaskVersion": 1,
                         "postTaskCode": child.ds_task_code if child.ds_task_code != 0 else id(child),
@@ -657,6 +670,8 @@ class DAGNode(object):
                         "conditionParams": {},
                         "createTime": params.get('operation_time'),
                         "updateTime": params.get('operation_time'),
+                        # "operator" : 1,
+                        # "operateTime" : params.get('operation_time'),
                     }
                 )
 
@@ -705,6 +720,20 @@ class DAGNode(object):
                 ),
                 "releaseState": "ONLINE",
                 "timeout": 0,
+                # "globalParamList" : [ ],
+                # "globalParamMap" : { },
+                # "createTime" : params.get('operation_time'),
+                # "updateTime" : params.get('operation_time'),
+                "flag" : "YES",
+                # "userId" : 1,
+                "userName" : None,
+                "projectName" : None,
+                "scheduleReleaseState" : None,
+                "schedule" : None,
+                "timeout" : 0,
+                "modifyBy" : None,
+                "warningGroupId" : None,
+                "executionType" : "PARALLEL"
             }
 
             # result = ds_api.update_process_definition_by_code(
@@ -733,13 +762,13 @@ class DAGNode(object):
                     self.ds_modify_desc = 'update'
 
             if self.ds_origin_process:
-                process_def = self.ds_origin_process['processDefinition']
+                process_def = self.ds_origin_process['workflowDefinition']
                 for key, value in self.ds_process.items():
                     if key == "locations":
                         continue
                     elif key == "taskRelationJson":
                         l_list = json.loads(value)
-                        r_list = self.ds_origin_process["processTaskRelationList"]
+                        r_list = self.ds_origin_process["workflowTaskRelationList"]
                         local_relation_dict = {
                             str(l["preTaskCode"]) + "_" + str(l["postTaskCode"]): l
                             for l in l_list
@@ -783,14 +812,37 @@ class DAGNode(object):
                             for sk in diff_keys:
                                 codes = sk.split('_')
                                 if codes[0] != '0':
-                                    l: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[0])]
-                                    r: DAGNode = params.get('code_node_mapping')[self.ds_project_code][int(codes[1])]
-                                    print_and_log(
-                                        'cover_change',
-                                        "将删除流程关系:[{}]::[{}({})]->[{}({})] ".format(
-                                            self.name, l.name, l.type, r.name, r.type
+                                    l: DAGNode = params.get('code_node_mapping')[self.ds_project_code].get(int(codes[0]))
+                                    r: DAGNode = params.get('code_node_mapping')[self.ds_project_code].get(int(codes[1]))
+                                    
+                                    if l is not None and r is not None:
+                                        print_and_log(
+                                            'cover_change',
+                                            "将删除流程关系:[{}]::[{}({})]->[{}({})] ".format(
+                                                self.name, l.name, l.type, r.name, r.type
+                                            )
                                         )
-                                    )
+                                    elif l is not None:
+                                        print_and_log(
+                                            'cover_change',
+                                            "将删除流程关系:[{}]::[{}({})]->[{}] ".format(
+                                                self.name, l.name, l.type, int(codes[1])
+                                            )
+                                        )
+                                    elif r is not None:
+                                        print_and_log(
+                                            'cover_change',
+                                            "将删除流程关系:[{}]::[{}]->[{}({})] ".format(
+                                                self.name, int(codes[0]), r.name, r.type
+                                            )
+                                        )
+                                    else:
+                                        print_and_log(
+                                            'cover_change',
+                                            "将删除流程关系:[{}]::[{}]->[{}] ".format(
+                                                self.name, int(codes[0]), int(codes[1])
+                                            )
+                                        )
                             self.ds_modify_desc = 'update'
 
                     elif key == "taskDefinitionJson":
@@ -858,7 +910,7 @@ class DAGNode(object):
                             self.ds_modify_desc = 'update'
                     else:
                         # temprary
-                        if key in ('tenantCode', 'description'):
+                        if key in ('tenantCode', 'description', 'globalParamList', 'globalParamMap'):
                             continue
                         if value != process_def[key]:
                             print_and_log(
@@ -991,9 +1043,7 @@ class DAGNode(object):
             return
         elif self.type != "process":
             raise TypeError("must be process")
-        
-        connection = params.get('connection')
-        
+
         if self.ds_modify_desc:
             
             has_self_dependent = False
@@ -1003,104 +1053,19 @@ class DAGNode(object):
                     has_self_dependent = True
                     break
             
+            
             if has_self_dependent:
-                # generate fake process instance
-                process_instance_id = ds_db.gen_process_instance_id(connection)
-                process_instance = {
-                    "id": process_instance_id,
-                    "name": "{}-fake-{}".format(self.name, params.get('schedule_time')),
-                    "process_definition_code": self.ds_process_code,
-                    "process_definition_version": 1, # un operatable
-                    "state": 7,
-                    "recovery": 0,
-                    "start_time": params.get('start_time'),
-                    "end_time": params.get('end_time'),
-                    "run_times": 1,
-                    "host": params.get('host'), #"172.2.1.22:5678",
-                    "command_type": 6,
-                    "command_param": None,
-                    "task_depend_type": 2,
-                    "max_try_times": 0,
-                    "failure_strategy": 1,
-                    "warning_type": 0,
-                    "warning_group_id": 0,
-                    "schedule_time": params.get('schedule_time'),
-                    "command_start_time": params.get('start_time'),
-                    "global_params": '[{{"prop":"global_bizdate","direct":"IN","type":"VARCHAR","value":"{biz_date}"}}]'.format(biz_date=params.get('biz_date')),
-                    "process_instance_json": None,
-                    "flag": 1,
-                    "update_time": None,
-                    "is_sub_process": 0,
-                    "executor_id": params.get('executor_id'), #2,
-                    "history_cmd": "SCHEDULER",
-                    "dependence_schedule_times": None,
-                    "process_instance_priority": 2,
-                    "worker_group": "default",
-                    "environment_code": "-1",
-                    "timeout": 0,
-                    "tenant_id": 1,
-                    "var_pool": "[]",
-                    "dry_run": 0,
-                    "next_process_instance_id": 0,
-                    "restart_time": params.get('start_time')
-                }
-
-                ds_db.insert_to_table(connection, 't_ds_process_instance', process_instance)
+                schedule_time = datetime.strptime(params.get('schedule_time'), "%Y-%m-%d %H:%M:%S")
+                ds_api.start_fake_workflow(self.project_name, self.name, schedule_time, params.get("tenant_name"))
 
                 print_and_log(
                     "instance",
-                    "writed process_instance: id:{}, name:{}, code:{}".format(
-                        process_instance_id,
-                        process_instance['name'],
+                    "created workflow with dry run: name={}, scheduleTime={}, code={}".format(
+                        self.name,
+                        schedule_time,
                         self.ds_process_code
                     )
                 )
-            
-                for child_node in self.get_valid_children():
-                    task_instance_id = ds_db.gen_task_instance_id(connection)
-                    task_instance = {
-                        "id": task_instance_id,
-                        "name": "{}-fake-{}".format(child_node.name, params.get('schedule_time')),
-                        "task_type": child_node.ds_task['taskType'],
-                        "task_code": child_node.ds_task_code,
-                        "task_definition_version": 1,
-                        "process_instance_id": process_instance_id,
-                        "state": 7,
-                        "submit_time": None,
-                        "start_time": params.get('start_time'),
-                        "end_time": params.get('end_time'),
-                        "host": params.get('host'),
-                        "execute_path": None,
-                        "log_path": "",
-                        "alert_flag": 0,
-                        "retry_times": 0,
-                        "pid": 0,
-                        "app_link": None,
-                        "task_params": "{}",
-                        "flag": 1,
-                        "retry_interval": 1,
-                        "max_retry_times": 0,
-                        "task_instance_priority": 2,
-                        "worker_group": self.ds_worker_group,
-                        "environment_code": params.get('environments').get(self.ds_environment),
-                        "environment_config": "",
-                        "executor_id": 2,
-                        "first_submit_time": None,
-                        "delay_time": 0,
-                        "var_pool": None,
-                        "dry_run": 0
-                    }
-
-                    ds_db.insert_to_table(connection, 't_ds_task_instance', task_instance)
-
-                    print_and_log(
-                        "instance",
-                        "写入流程实例: id:{}, name:{}, code:{}".format(
-                            task_instance_id,
-                            task_instance['name'],
-                            child_node.ds_task_code
-                        )
-                    )
 
         for child_node in self.get_valid_children():
             if child_node.type == "process":

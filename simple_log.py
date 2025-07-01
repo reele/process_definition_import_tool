@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from datetime import datetime
-from os import mkdir
+from os import mkdir, makedirs
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -9,8 +9,9 @@ LOG_TIME_STR = datetime.now().strftime(TIME_FORMAT)
 
 log_time=LOG_TIME_STR.replace(' ', '_').replace(':', '-')
 
-log_dir = 'log_{}'.format(log_time)
-mkdir(log_dir)
+log_dir = 'logs/log_{}'.format(log_time)
+makedirs(log_dir, exist_ok=True)
+
 
 OUTPUT_METHODS = []
 

@@ -108,8 +108,8 @@ def load_config_to_dag(
                         task_node.prev_nodes.remove(self_dependent_node)
                         for prev_node in self_dependent_node.prev_nodes:
                             prev_node.next_nodes.remove(self_dependent_node)
-                            prev_node.next_nodes.append(task_node)
-                            task_node.prev_nodes.append(prev_node)
+                            prev_node.next_nodes.add(task_node)
+                            task_node.prev_nodes.add(prev_node)
                         task_node.continuous_check_date = None
                         tree_nodes.pop(self_dependent_node.path)
 
@@ -316,13 +316,13 @@ def load_config_to_dag(
                     # 添加依赖关系的节点如果已有自依赖, 将关系添加到自依赖节点上(与自动添加自依赖节点的操作同步,与现有调度已建立的关系同规则)
                     for check_dep_node in task_node.prev_nodes:
                         if check_dep_node.type == 'self_dependent':
-                            check_dep_node.prev_nodes.append(dependency_task_node)
-                            dependency_task_node.next_nodes.append(check_dep_node)
+                            check_dep_node.prev_nodes.add(dependency_task_node)
+                            dependency_task_node.next_nodes.add(check_dep_node)
                             dependency_task_node.dependents.add(check_dep_node)
                             break
                     else:
-                        task_node.prev_nodes.append(dependency_task_node)
-                        dependency_task_node.next_nodes.append(task_node)
+                        task_node.prev_nodes.add(dependency_task_node)
+                        dependency_task_node.next_nodes.add(task_node)
                         dependency_task_node.dependents.add(task_node)
                 break
             task_node = task_node.parent
@@ -351,8 +351,8 @@ def load_config_to_dag(
                 dep_node.ds_project_code = orig_task_node.ds_project_code
                 orig_dependency_task_node.dependents.add(dep_node)
 
-            orig_task_node.prev_nodes.append(dep_node)
-            dep_node.next_nodes.append(orig_task_node)
+            orig_task_node.prev_nodes.add(dep_node)
+            dep_node.next_nodes.add(orig_task_node)
 
     # 自依赖,加到 SELF_DEPENDENT_GROUPS 每个作业流的头部任务之前
     for task_node in [node for node in tree_nodes.values()]:
@@ -403,10 +403,10 @@ def load_config_to_dag(
 
         for prev_node in cycle_dep_node.prev_nodes:
             prev_node.next_nodes.remove(task_node)
-            prev_node.next_nodes.append(cycle_dep_node)
+            prev_node.next_nodes.add(cycle_dep_node)
 
         task_node.prev_nodes = [cycle_dep_node]
-        cycle_dep_node.next_nodes.append(task_node)
+        cycle_dep_node.next_nodes.add(task_node)
         task_node.parent.children.append(cycle_dep_node)
 
     # return root_node
@@ -445,7 +445,7 @@ def load_server_definitions_to_dag(
 
         # 生成code和DAGNode的映射
         for process_definition in processes:
-            process_obj: dict = process_definition["processDefinition"]
+            process_obj: dict = process_definition["workflowDefinition"]
             process_node = DAGNode("process", process_obj["name"])
             process_code = process_obj["code"]
             process_node.ds_process_code = process_code
@@ -486,8 +486,8 @@ def load_server_definitions_to_dag(
                 task_node.ds_worker_group = task_obj['workerGroup']
                 # t_ds_task_definition.environmentCode
                 task_node.ds_environment = ENVIRONMENT_NAMES.get(task_obj['environmentCode'])
-                if task_node.ds_environment is None:
-                    print('任务{}的环境代码{}不存在.'.format(task_obj['name'], task_obj['environmentCode']))
+                # if task_node.ds_environment is None:
+                #     print('任务{}的环境代码{}不存在.'.format(task_obj['name'], task_obj['environmentCode']))
 
                 code_task_node_mapping[project_code][task_code] = task_node
 
@@ -496,13 +496,13 @@ def load_server_definitions_to_dag(
         processes = origin_project['processes']
 
         for process_definition in processes:
-            process_obj: dict = process_definition["processDefinition"]
+            process_obj: dict = process_definition["workflowDefinition"]
 
             process_node = code_process_node_mapping[project_code][process_obj["code"]]
             tasks: list = process_definition["taskDefinitionList"]
             for task_obj in tasks:
-                if task_obj["taskType"] == "SUB_PROCESS":
-                    sub_process_code = task_obj["taskParams"]["processDefinitionCode"]
+                if task_obj["taskType"] == "SUB_WORKFLOW":
+                    sub_process_code = task_obj["taskParams"]["workflowDefinitionCode"]
                     try:
                         child_node = code_process_node_mapping[project_code][sub_process_code]
                     except Exception as e:
@@ -541,7 +541,11 @@ def load_server_definitions_to_dag(
                         if dependency_node is not None:
                             break
                     
-                    assert dependency_node is not None, f'被依赖的节点未找到dependent_task_code[{dependent_task_code}], dependent_process_code[{dependent_process_code}]'
+                    if dependency_node is None:
+                        print_and_log('WARN',
+                            f'被依赖的节点未找到dependent_task_code[{dependent_task_code}], dependent_process_code[{dependent_process_code}]'
+                        )
+                        continue
                     # 是否为自依赖需要解析relation之后转换
                     task_node.dependency_node = dependency_node
 
@@ -551,10 +555,10 @@ def load_server_definitions_to_dag(
                     task_node.ds_worker_group = task_obj['workerGroup']
                     # t_ds_task_definition.environmentCode
                     task_node.ds_environment = ENVIRONMENT_NAMES.get(task_obj['environmentCode'])
-                    if task_node.ds_environment is None:
-                        print('任务{}的环境代码{}不存在.'.format(task_obj['name'], task_obj['environmentCode']))
+                    # if task_node.ds_environment is None:
+                    #     print('任务{}的环境代码{}不存在.'.format(task_obj['name'], task_obj['environmentCode']))
 
-            relations: list = process_definition["processTaskRelationList"]
+            relations: list = process_definition["workflowTaskRelationList"]
             for relation_obj in relations:
                 pre_task_code = relation_obj["preTaskCode"]
                 if pre_task_code == 0:
@@ -579,8 +583,8 @@ def load_server_definitions_to_dag(
                     if post_node is None:
                         continue
 
-                pre_node.next_nodes.append(post_node)
-                post_node.prev_nodes.append(pre_node)
+                pre_node.next_nodes.add(post_node)
+                post_node.prev_nodes.add(pre_node)
 
     # 建立node列表
     root_node = tree_nodes["root"]
@@ -714,12 +718,12 @@ def import_to_server(
         schedules[project_code] = {}
         project_processes = project_def['processes']
         for process_def in project_processes:
-            processes[project_code][process_def["processDefinition"]["code"]] = process_def
+            processes[project_code][process_def["workflowDefinition"]["code"]] = process_def
             for task_def in process_def["taskDefinitionList"]:
                 tasks[project_code][task_def['code']] = task_def
 
         for process_schedules in project_def['schedules']:
-            schedules[project_code][process_schedules['processDefinitionCode']] = process_schedules
+            schedules[project_code][process_schedules['workflowDefinitionCode']] = process_schedules
 
     params = AutoParams(
         {
@@ -757,7 +761,7 @@ def import_to_server(
             for process in processes_in_project.values():
                 print_and_log(
                     "not_covered",
-                    "此次操作未覆盖到流程:[{}]/[{}][{}]".format(project_name, process['processDefinition']["name"], process['processDefinition']["code"]),
+                    "此次操作未覆盖到流程:[{}]/[{}][{}]".format(project_name, process['workflowDefinition']["name"], process['workflowDefinition']["code"]),
                 )
 
     if params.get("changed_process_count"):
@@ -799,6 +803,7 @@ def import_to_server(
                     "biz_date": biz_date.strftime("%Y%m%d"),
                     "executor_id": 2,
                     "environments": ENVIRONMENTS,
+                    "tenant_name": tenant_name,
                     # "environment_code": environment_code,
                 }
             )
@@ -836,11 +841,6 @@ def import_from_xlsx(
     origin_projects: dict[int, dict] = {}
 
     load_server_definitions_to_dag(PROJECT_NAMES, tree_nodes, config, origin_projects)
-
-    # else:
-    #     result = ds_api.create_project(project_name, "")
-    #     project_code = result["code"]
-    #     print_and_log(None, "建立项目:[{}][{}]".format(project_name, project_code))
 
     print_and_log(None, "加载配置:[{}] ...".format(xlsx_path))
     load_config_to_dag(tree_nodes, config, origin_projects)

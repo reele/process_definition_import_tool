@@ -30,6 +30,56 @@ Dolphinscheduler 外部作业导入工具(目前支持版本dev:3.3+)
 2. 用名称匹配项目下已有的任务code, 不存在时生成新任务code
 3. 遍历dag生成流程, 将流程定义更新到服务中
 
+```mermaid
+flowchart TB
+    %% 定义 Domain
+    subgraph domain[Domain]
+        direction TB
+        
+        %% 子分组任务（引用子分组）
+        subTask1[cbs]
+        subTask2[子分组任务2]
+        subTask3[子分组任务3]
+
+    end
+
+    %% 子分组 1 及其任务
+    subgraph subgroup1[cbs]
+        direction LR
+        shell11(Shell 任务1.1)
+        shell12(cbs_d_teller)
+        dep13(Dependent 任务1.3)
+        
+        dep13 --> shell12
+        shell11 --> shell12
+    end
+
+    %% 子分组 2 及其任务
+    subgraph subgroup2[子分组2]
+        direction LR
+        shell21(Shell 任务2.1)
+        dep22(Dependent 任务2.2)
+        dep22 --> shell21
+    end
+
+    %% 子分组 3 及其任务
+    subgraph subgroup3[子分组3]
+        direction LR
+        dep31(Dependent 任务3.1)
+        shell32(Shell 任务3.2)
+        dep31 --> shell32
+    end
+
+    %% 跨分组依赖关系
+    dep22 -.-> shell11
+    dep31 -.-> shell21
+
+
+    subTask1 -.-> subgroup1[子分组1]
+    subTask2 -.-> subgroup2[子分组2]
+    subTask3 -.-> subgroup3[子分组3]
+```
+
 ## 代码概述
 
 * `main_general.py`
